@@ -3,6 +3,8 @@ pub enum Token {
     Illegal,
     End,
 
+    Comment(String),
+
     // -
     // Symbols
     // -

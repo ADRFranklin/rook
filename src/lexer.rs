@@ -30,6 +30,20 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn peek_char_eq_consume(&mut self, ch: char) -> bool {
+        match self.peek_char() {
+            Some(&peek_ch) => {
+                if peek_ch == ch {
+                    self.read_char();
+                    true
+                } else {
+                    false
+                }
+            }
+            None => false,
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while let Some(&c) = self.peek_char() {
             if !c.is_whitespace() {
@@ -44,6 +58,17 @@ impl<'a> Lexer<'a> {
             Some(&ch) => is_letter(ch),
             None => false,
         }
+    }
+
+    fn read_until_eol(&mut self) -> String {
+        let mut line = String::new();
+        while let Some(c) = self.read_char() {
+            if c == '\n' {
+                break;
+            }
+            line.push(c);
+        }
+        line
     }
 
     fn read_identifier(&mut self, first: char) -> String {
@@ -76,81 +101,83 @@ impl<'a> Lexer<'a> {
 
         match self.read_char() {
             Some('=') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::Equal
                 } else {
                     Token::Assign
                 }
             }
             Some('+') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::PlusAssign
-                } else if self.peek_char_eq('+') {
+                } else if self.peek_char_eq_consume('+') {
                     Token::PlusPlus
                 } else {
                     Token::Plus
                 }
             }
             Some('-') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::MinusAssign
-                } else if self.peek_char_eq('-') {
+                } else if self.peek_char_eq_consume('-') {
                     Token::MinusMinus
                 } else {
                     Token::Minus
                 }
             }
             Some('*') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::AsteriskAssign
                 } else {
                     Token::Asterisk
                 }
             }
             Some('/') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::SlashAssign
+                } else if self.peek_char_eq_consume('/') {
+                    Token::Comment(self.read_until_eol().trim_left().into())
                 } else {
                     Token::Slash
                 }
             }
             Some('%') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::PercentAssign
                 } else {
                     Token::Percent
                 }
             }
             Some('&') => {
-                if self.peek_char_eq('&') {
+                if self.peek_char_eq_consume('&') {
                     Token::And
-                } else if self.peek_char_eq('=') {
+                } else if self.peek_char_eq_consume('=') {
                     Token::BitAndAssign
                 } else {
                     Token::BitAnd
                 }
             }
             Some('|') => {
-                if self.peek_char_eq('|') {
+                if self.peek_char_eq_consume('|') {
                     Token::Or
-                } else if self.peek_char_eq('=') {
+                } else if self.peek_char_eq_consume('=') {
                     Token::BitOrAssign
                 } else {
                     Token::BitOr
                 }
             }
             Some('^') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::BitXorAssign
                 } else {
                     Token::BitXor
                 }
             }
             Some('<') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::LowerThanEqual
-                } else if self.peek_char_eq('<') {
-                    if self.peek_char_eq('=') {
+                } else if self.peek_char_eq_consume('<') {
+                    if self.peek_char_eq_consume('=') {
                         Token::BitLeftAssign
                     } else {
                         Token::BitLeft
@@ -160,10 +187,10 @@ impl<'a> Lexer<'a> {
                 }
             }
             Some('>') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::GreaterThanEqual
-                } else if self.peek_char_eq('>') {
-                    if self.peek_char_eq('=') {
+                } else if self.peek_char_eq_consume('>') {
+                    if self.peek_char_eq_consume('=') {
                         Token::BitRightAssign
                     } else {
                         Token::BitRight
@@ -173,7 +200,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             Some('!') => {
-                if self.peek_char_eq('=') {
+                if self.peek_char_eq_consume('=') {
                     Token::NotEqual
                 } else {
                     Token::Bang
@@ -188,8 +215,8 @@ impl<'a> Lexer<'a> {
             Some('[') => Token::LeftSquare,
             Some(']') => Token::RightSquare,
             Some('.') => {
-                if self.peek_char_eq('.') {
-                    if self.peek_char_eq('.') {
+                if self.peek_char_eq_consume('.') {
+                    if self.peek_char_eq_consume('.') {
                         Token::Elipsis
                     } else {
                         Token::Range
@@ -238,17 +265,62 @@ main() {
 }
 ";
 
-    let tests = vec![
+    let want = vec![
+        Token::Comment(String::from("Comment")),
         Token::Directive,
         Token::Symbol(String::from("include")),
+        Token::LowerThan,
+        Token::Symbol(String::from("a_samp")),
+        Token::GreaterThan,
         Token::Symbol(String::from("main")),
         Token::LeftBracket,
         Token::RightBracket,
+        Token::LeftBrace,
+        Token::New,
+        Token::Symbol(String::from("a")),
+        Token::Semicolon,
+        Token::If,
+        Token::LeftBracket,
+        Token::Symbol(String::from("a")),
+        Token::Equal,
+        Token::Integer(3),
+        Token::RightBracket,
+        Token::LeftBrace,
+        Token::Symbol(String::from("a")),
+        Token::PlusPlus,
+        Token::Semicolon,
+        Token::RightBrace,
+        Token::Else,
+        Token::If,
+        Token::LeftBracket,
+        Token::Symbol(String::from("a")),
+        Token::NotEqual,
+        Token::Integer(3),
+        Token::RightBracket,
+        Token::LeftBrace,
+        Token::Symbol(String::from("a")),
+        Token::MinusMinus,
+        Token::Semicolon,
+        Token::RightBrace,
+        Token::Else,
+        Token::LeftBrace,
+        Token::Symbol(String::from("a")),
+        Token::Assign,
+        Token::Integer(0),
+        Token::Semicolon,
+        Token::RightBrace,
+        Token::RightBrace,
     ];
+    let mut got = Vec::new();
 
     let mut l = Lexer::new(input);
-    for t in tests {
+    loop {
         let tok = l.next_token();
-        assert_eq!(tok, t);
+        if tok == Token::End {
+            break;
+        }
+        got.push(tok)
     }
+
+    assert_eq!(got, want);
 }
