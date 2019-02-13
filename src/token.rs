@@ -40,6 +40,7 @@ pub enum Token {
     BitRightAssign,   // >>=
     NotEqual,         // !=
     Bang,             // !
+    Colon,            // :
     Semicolon,        // ;
     Comma,            // ,
     LeftBrace,        // {

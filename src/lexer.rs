@@ -1,6 +1,7 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
+use crate::ring::Ring;
 use crate::token;
 use crate::token::Token;
 
@@ -15,6 +16,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn lex(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        loop {
+            let tok = self.next_token();
+            if tok == Token::End {
+                break;
+            }
+            tokens.push(tok)
+        }
+        tokens
+    }
+
     fn read_char(&mut self) -> Option<char> {
         self.input.next()
     }
@@ -23,12 +36,12 @@ impl<'a> Lexer<'a> {
         self.input.peek()
     }
 
-    fn peek_char_eq(&mut self, ch: char) -> bool {
-        match self.peek_char() {
-            Some(&peek_ch) => peek_ch == ch,
-            None => false,
-        }
-    }
+    // fn peek_char_eq(&mut self, ch: char) -> bool {
+    //     match self.peek_char() {
+    //         Some(&peek_ch) => peek_ch == ch,
+    //         None => false,
+    //     }
+    // }
 
     fn peek_char_eq_consume(&mut self, ch: char) -> bool {
         match self.peek_char() {
@@ -60,6 +73,22 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn read_string_until(&mut self, until: &str) -> String {
+        let mut result = String::new();
+        let until_len = until.len();
+        let mut recent_chars = Ring::new(until_len);
+
+        while let Some(c) = self.read_char() {
+            recent_chars.insert(c as u8);
+            if String::from(until) == String::from_utf8(recent_chars.unroll()).unwrap() {
+                result.truncate(result.len() - until_len);
+                break;
+            }
+            result.push(c);
+        }
+        result
+    }
+
     fn read_until_eol(&mut self) -> String {
         let mut line = String::new();
         while let Some(c) = self.read_char() {
@@ -71,29 +100,40 @@ impl<'a> Lexer<'a> {
         line
     }
 
-    fn read_identifier(&mut self, first: char) -> String {
+    fn read_symbol(&mut self, first: char) -> Token {
         let mut ident = String::new();
         ident.push(first);
 
         while self.peek_is_letter() {
             ident.push(self.read_char().unwrap());
         }
-
-        ident
+        token::lookup_keyword(&ident)
     }
 
-    fn read_number(&mut self, first: char) -> i32 {
+    fn read_number(&mut self, first: char) -> Token {
         let mut number = String::new();
         number.push(first);
 
+        let mut has_decimal = false;
         while let Some(&c) = self.peek_char() {
             if !c.is_numeric() {
-                break;
+                if c == '.' {
+                    has_decimal = true
+                } else if c == '_' {
+                    continue;
+                } else {
+                    break;
+                }
             }
+
             number.push(self.read_char().unwrap());
         }
 
-        number.parse().unwrap()
+        if has_decimal {
+            Token::Float(number.parse().unwrap())
+        } else {
+            Token::Integer(number.parse().unwrap())
+        }
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -137,6 +177,8 @@ impl<'a> Lexer<'a> {
                     Token::SlashAssign
                 } else if self.peek_char_eq_consume('/') {
                     Token::Comment(self.read_until_eol().trim_left().into())
+                } else if self.peek_char_eq_consume('*') {
+                    Token::Comment(self.read_string_until("*/").trim_left().into())
                 } else {
                     Token::Slash
                 }
@@ -207,6 +249,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             Some(';') => Token::Semicolon,
+            Some(':') => Token::Colon,
             Some(',') => Token::Comma,
             Some('{') => Token::LeftBrace,
             Some('}') => Token::RightBrace,
@@ -229,10 +272,9 @@ impl<'a> Lexer<'a> {
 
             Some(ch @ _) => {
                 if is_letter(ch) {
-                    let literal = self.read_identifier(ch);
-                    token::lookup_keyword(&literal)
+                    self.read_symbol(ch)
                 } else if ch.is_numeric() {
-                    Token::Integer(self.read_number(ch))
+                    self.read_number(ch)
                 } else {
                     token::Token::Illegal
                 }
@@ -245,82 +287,4 @@ impl<'a> Lexer<'a> {
 
 fn is_letter(ch: char) -> bool {
     ch.is_alphabetic() || ch == '_'
-}
-
-#[test]
-fn parse_test_1() {
-    let input = "
-// Comment
-#include <a_samp>
-
-main() {
-    new a;
-    if(a == 3) {
-        a++;
-    } else if(a != 3) {
-        a--;
-    } else {
-        a = 0;
-    }
-}
-";
-
-    let want = vec![
-        Token::Comment(String::from("Comment")),
-        Token::Directive,
-        Token::Symbol(String::from("include")),
-        Token::LowerThan,
-        Token::Symbol(String::from("a_samp")),
-        Token::GreaterThan,
-        Token::Symbol(String::from("main")),
-        Token::LeftBracket,
-        Token::RightBracket,
-        Token::LeftBrace,
-        Token::New,
-        Token::Symbol(String::from("a")),
-        Token::Semicolon,
-        Token::If,
-        Token::LeftBracket,
-        Token::Symbol(String::from("a")),
-        Token::Equal,
-        Token::Integer(3),
-        Token::RightBracket,
-        Token::LeftBrace,
-        Token::Symbol(String::from("a")),
-        Token::PlusPlus,
-        Token::Semicolon,
-        Token::RightBrace,
-        Token::Else,
-        Token::If,
-        Token::LeftBracket,
-        Token::Symbol(String::from("a")),
-        Token::NotEqual,
-        Token::Integer(3),
-        Token::RightBracket,
-        Token::LeftBrace,
-        Token::Symbol(String::from("a")),
-        Token::MinusMinus,
-        Token::Semicolon,
-        Token::RightBrace,
-        Token::Else,
-        Token::LeftBrace,
-        Token::Symbol(String::from("a")),
-        Token::Assign,
-        Token::Integer(0),
-        Token::Semicolon,
-        Token::RightBrace,
-        Token::RightBrace,
-    ];
-    let mut got = Vec::new();
-
-    let mut l = Lexer::new(input);
-    loop {
-        let tok = l.next_token();
-        if tok == Token::End {
-            break;
-        }
-        got.push(tok)
-    }
-
-    assert_eq!(got, want);
 }
