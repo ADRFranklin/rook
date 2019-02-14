@@ -4,15 +4,21 @@ use std::str::Chars;
 use crate::ring::Ring;
 use crate::token;
 use crate::token::Token;
+use crate::token::TokenType;
+use crate::token::TokenValue;
 
 pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
+    line: i32,
+    column: i32,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &str) -> Lexer {
         Lexer {
             input: input.chars().peekable(),
+            line: 1,
+            column: 1,
         }
     }
 
@@ -20,7 +26,7 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         loop {
             let tok = self.next_token();
-            if tok == Token::End {
+            if tok.token_type == TokenType::End {
                 break;
             }
             tokens.push(tok)
@@ -28,8 +34,28 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
+    fn gen_token(&self, t: TokenType, v: TokenValue) -> Token {
+        Token {
+            token_type: t,
+            value: v,
+            line: self.line,
+            column: self.column,
+            range: v.len() as i32,
+        }
+    }
+
     fn read_char(&mut self) -> Option<char> {
-        self.input.next()
+        let next = match self.input.next() {
+            Some(v) => v,
+            None => return None,
+        };
+        if next == '\n' {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
+        Some(next)
     }
 
     fn peek_char(&mut self) -> Option<&char> {
@@ -107,7 +133,14 @@ impl<'a> Lexer<'a> {
         while self.peek_is_letter() {
             ident.push(self.read_char().unwrap());
         }
-        token::lookup_keyword(&ident)
+
+        Token {
+            token_type: token::lookup_keyword(&ident),
+            value: TokenValue::String(ident),
+            line: 0,
+            column: 0,
+            range: 0,
+        }
     }
 
     fn read_number(&mut self, first: char) -> Token {
@@ -130,9 +163,12 @@ impl<'a> Lexer<'a> {
         }
 
         if has_decimal {
-            Token::Float(number.parse().unwrap())
+            self.gen_token(TokenType::Float, TokenValue::Float(number.parse().unwrap()))
         } else {
-            Token::Integer(number.parse().unwrap())
+            self.gen_token(
+                TokenType::Integer,
+                TokenValue::Integer(number.parse().unwrap()),
+            )
         }
     }
 
@@ -142,133 +178,139 @@ impl<'a> Lexer<'a> {
         match self.read_char() {
             Some('=') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::Equal
+                    self.gen_token(TokenType::Equal, TokenValue::None)
                 } else {
-                    Token::Assign
+                    self.gen_token(TokenType::Assign, TokenValue::None)
                 }
             }
             Some('+') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::PlusAssign
+                    self.gen_token(TokenType::PlusAssign, TokenValue::None)
                 } else if self.peek_char_eq_consume('+') {
-                    Token::PlusPlus
+                    self.gen_token(TokenType::PlusPlus, TokenValue::None)
                 } else {
-                    Token::Plus
+                    self.gen_token(TokenType::Plus, TokenValue::None)
                 }
             }
             Some('-') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::MinusAssign
+                    self.gen_token(TokenType::MinusAssign, TokenValue::None)
                 } else if self.peek_char_eq_consume('-') {
-                    Token::MinusMinus
+                    self.gen_token(TokenType::MinusMinus, TokenValue::None)
                 } else {
-                    Token::Minus
+                    self.gen_token(TokenType::Minus, TokenValue::None)
                 }
             }
             Some('*') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::AsteriskAssign
+                    self.gen_token(TokenType::AsteriskAssign, TokenValue::None)
                 } else {
-                    Token::Asterisk
+                    self.gen_token(TokenType::Asterisk, TokenValue::None)
                 }
             }
             Some('/') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::SlashAssign
+                    self.gen_token(TokenType::SlashAssign, TokenValue::None)
                 } else if self.peek_char_eq_consume('/') {
-                    Token::Comment(self.read_until_eol().trim_left().into())
+                    self.gen_token(
+                        TokenType::Comment,
+                        TokenValue::String(self.read_until_eol().trim_left().into()),
+                    )
                 } else if self.peek_char_eq_consume('*') {
-                    Token::Comment(self.read_string_until("*/").trim_left().into())
+                    self.gen_token(
+                        TokenType::Comment,
+                        TokenValue::String(self.read_string_until("*/").trim_left().into()),
+                    )
                 } else {
-                    Token::Slash
+                    self.gen_token(TokenType::Slash, TokenValue::None)
                 }
             }
             Some('%') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::PercentAssign
+                    self.gen_token(TokenType::PercentAssign, TokenValue::None)
                 } else {
-                    Token::Percent
+                    self.gen_token(TokenType::Percent, TokenValue::None)
                 }
             }
             Some('&') => {
                 if self.peek_char_eq_consume('&') {
-                    Token::And
+                    self.gen_token(TokenType::And, TokenValue::None)
                 } else if self.peek_char_eq_consume('=') {
-                    Token::BitAndAssign
+                    self.gen_token(TokenType::BitAndAssign, TokenValue::None)
                 } else {
-                    Token::BitAnd
+                    self.gen_token(TokenType::BitAnd, TokenValue::None)
                 }
             }
             Some('|') => {
                 if self.peek_char_eq_consume('|') {
-                    Token::Or
+                    self.gen_token(TokenType::Or, TokenValue::None)
                 } else if self.peek_char_eq_consume('=') {
-                    Token::BitOrAssign
+                    self.gen_token(TokenType::BitOrAssign, TokenValue::None)
                 } else {
-                    Token::BitOr
+                    self.gen_token(TokenType::BitOr, TokenValue::None)
                 }
             }
             Some('^') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::BitXorAssign
+                    self.gen_token(TokenType::BitXorAssign, TokenValue::None)
                 } else {
-                    Token::BitXor
+                    self.gen_token(TokenType::BitXor, TokenValue::None)
                 }
             }
             Some('<') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::LowerThanEqual
+                    self.gen_token(TokenType::LowerThanEqual, TokenValue::None)
                 } else if self.peek_char_eq_consume('<') {
                     if self.peek_char_eq_consume('=') {
-                        Token::BitLeftAssign
+                        self.gen_token(TokenType::BitLeftAssign, TokenValue::None)
                     } else {
-                        Token::BitLeft
+                        self.gen_token(TokenType::BitLeft, TokenValue::None)
                     }
                 } else {
-                    Token::LowerThan
+                    self.gen_token(TokenType::LowerThan, TokenValue::None)
                 }
             }
             Some('>') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::GreaterThanEqual
+                    self.gen_token(TokenType::GreaterThanEqual, TokenValue::None)
                 } else if self.peek_char_eq_consume('>') {
                     if self.peek_char_eq_consume('=') {
-                        Token::BitRightAssign
+                        self.gen_token(TokenType::BitRightAssign, TokenValue::None)
                     } else {
-                        Token::BitRight
+                        self.gen_token(TokenType::BitRight, TokenValue::None)
                     }
                 } else {
-                    Token::GreaterThan
+                    self.gen_token(TokenType::GreaterThan, TokenValue::None)
                 }
             }
             Some('!') => {
                 if self.peek_char_eq_consume('=') {
-                    Token::NotEqual
+                    self.gen_token(TokenType::NotEqual, TokenValue::None)
                 } else {
-                    Token::Bang
+                    self.gen_token(TokenType::Bang, TokenValue::None)
                 }
             }
-            Some(';') => Token::Semicolon,
-            Some(':') => Token::Colon,
-            Some(',') => Token::Comma,
-            Some('{') => Token::LeftBrace,
-            Some('}') => Token::RightBrace,
-            Some('(') => Token::LeftBracket,
-            Some(')') => Token::RightBracket,
-            Some('[') => Token::LeftSquare,
-            Some(']') => Token::RightSquare,
+            Some(';') => self.gen_token(TokenType::Semicolon, TokenValue::None),
+            Some(':') => self.gen_token(TokenType::Colon, TokenValue::None),
+            Some(',') => self.gen_token(TokenType::Comma, TokenValue::None),
+            Some('{') => self.gen_token(TokenType::LeftBrace, TokenValue::None),
+            Some('}') => self.gen_token(TokenType::RightBrace, TokenValue::None),
+            Some('(') => self.gen_token(TokenType::LeftBracket, TokenValue::None),
+            Some(')') => self.gen_token(TokenType::RightBracket, TokenValue::None),
+            Some('[') => self.gen_token(TokenType::LeftSquare, TokenValue::None),
+            Some(']') => self.gen_token(TokenType::RightSquare, TokenValue::None),
             Some('.') => {
                 if self.peek_char_eq_consume('.') {
                     if self.peek_char_eq_consume('.') {
-                        Token::Elipsis
+                        self.gen_token(TokenType::Elipsis, TokenValue::None)
                     } else {
-                        Token::Range
+                        self.gen_token(TokenType::Range, TokenValue::None)
                     }
                 } else {
-                    Token::Illegal
+                    self.gen_token(TokenType::Illegal, TokenValue::None)
                 }
             }
-            Some('#') => Token::Directive,
+            Some('#') => self.gen_token(TokenType::Directive, TokenValue::None),
 
             Some(ch @ _) => {
                 if is_letter(ch) {
@@ -276,11 +318,11 @@ impl<'a> Lexer<'a> {
                 } else if ch.is_numeric() {
                     self.read_number(ch)
                 } else {
-                    token::Token::Illegal
+                    self.gen_token(TokenType::Illegal, TokenValue::None)
                 }
             }
 
-            None => Token::End,
+            None => self.gen_token(TokenType::End, TokenValue::None),
         }
     }
 }
